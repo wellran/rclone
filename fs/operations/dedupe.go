@@ -90,7 +90,29 @@ func dedupeDeleteIdentical(ctx context.Context, ht hash.Type, remote string, obj
 
 	// Delete identical duplicates, filling remainingObjs with the ones remaining
 	for md5sum, hashObjs := range byHash {
-		remainingObjs = append(remainingObjs, hashObjs[0])
+		if len(hashObjs) > 1 {
+			// Check none of the found objects have the same ID
+			IDs := make(map[string][]int, len(hashObjs))
+			for index, o := range hashObjs {
+				if do, ok := o.(fs.IDer); ok {
+					if ID := do.ID(); ID != "" {
+						IDs[ID] = append(IDs[ID], index)
+					}
+				}
+			}
+			// Remove any objects with duplicate IDs from consideration
+			for ID, indexes := range IDs {
+				if len(indexes) > 1 {
+					fs.Logf(remote, "Not deleting %d copies with hash %q and ID %q as it is multiply linked", len(indexes), md5sum, ID)
+					for _, index := range indexes {
+						hashObjs = append(hashObjs[:index], hashObjs[:index+1]...)
+					}
+				}
+			}
+		}
+		if len(hashObjs) > 0 {
+			remainingObjs = append(remainingObjs, hashObjs[0])
+		}
 		if len(hashObjs) > 1 {
 			fs.Logf(remote, "Deleting %d/%d identical duplicates (%v %q)", len(hashObjs)-1, len(hashObjs), ht, md5sum)
 			for _, o := range hashObjs[1:] {
